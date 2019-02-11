@@ -1,5 +1,6 @@
 import csv
 import geopy.distance
+from shapely.geometry import LineString, Point
 import time
 
 class parseGTFS:
@@ -85,6 +86,17 @@ class parseGTFS:
                     elif row["shape_id"]!=traj.shapeid and flag==1:
                         break
                 traj.proj.append(minseq)
+        for traj in trajectories:
+            for i in range(len(traj.stops)):
+                for row in shapes_data:
+                    if (traj.proj[i]-1)==int(row["shape_pt_sequence"]):
+                        prev_row = row
+                    elif traj.proj[i]==int(row["shape_pt_sequence"]):
+                        line = LineString([(prev_row["shape_pt_lat"], prev_row["shape_pt_lon"]), (row["shape_pt_lat"], row["shape_pt_lon"])])
+                        p = Point(stop_dict[traj.stops[i]])
+                        np = line.interpolate(line.project(p))
+                        traj.stop_proj.append(np)
+                        break
         return trajectories
 
 class Trajectory:
@@ -95,6 +107,7 @@ class Trajectory:
         self.trajectory=[]
         self.stops=[]
         self.proj=[]
+        self.stop_proj=[]
     def getPosition(time):
         return coordinate
     def isActive(time):
