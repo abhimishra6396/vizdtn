@@ -1,5 +1,6 @@
 import csv
-import geopy
+import geopy.distance
+import time
 
 class parseGTFS:
     def __init__(self,trip_files):
@@ -8,9 +9,14 @@ class parseGTFS:
         csv_file = open(file_name, mode='r')
         data = csv.DictReader(csv_file)
         return data
+    def toElapsedTime(self, date_time, current_date):
+        time_current = time.mktime(time.strptime(current_date,"%d/%m/%Y"))
+        date_time = date_time.split(":")
+        time_midnight = 3600*int(date_time[0]) + 60*int(date_time[1]) + int(date_time[2])
+        return time_current + time_midnight
     def parseTrips(self):
         trips = parseGTFS(trip_files)
-        trips_data = trips.readCSV(self.trip_files[7])
+        trips_data = trips.readCSV(self.trip_files[8])
         line_count=0
         trip_set=set()
         trajectories=[]
@@ -20,20 +26,75 @@ class parseGTFS:
             trip_set.add(row["trip_id"])
             new_len=len(trip_set)
             if (prev_len!=new_len):
-                trajectories.append(Trajectory(row["trip_id"], row["service_id"]))
+                trajectories.append(Trajectory(row["trip_id"], row["service_id"], row["shape_id"]))
         stops = parseGTFS(trip_files)
-        stops_data = stops.readCSV(self.trip_files[5])
+        stops_data = stops.readCSV(self.trip_files[6])
         for row in stops_data:
             stop_dict[row["stop_id"]] = (row["stop_lat"],row["stop_lon"])
         stop_times = parseGTFS(trip_files)
-        stop_times_data = stop_times.readCSV(self.trip_files[4])
+        stop_times_data = stop_times.readCSV(self.trip_files[5])
+        calendar = parseGTFS(trip_files)
+        calendar_data = calendar.readCSV(self.trip_files[2])
+        flag=0
+        prev_trip_id=0
+        counter=0
+        for row in stop_times_data:
+            if counter<100:
+                if prev_trip_id==row["trip_id"] or flag==0:
+                    traj_dict={}
+                    val = self.toElapsedTime(row["arrival_time"],"08/02/2019")
+                    traj_dict[val] = (stop_dict[row["stop_id"]])
+                    for traj in trajectories:
+                        if traj.trip_id==row["trip_id"]:
+                            traj.trajectory.append(traj_dict)
+                            traj.stops.append(row["stop_id"])
+                            break
+                else:
+                    traj_dict={}
+                    val = self.toElapsedTime(row["arrival_time"],"08/02/2019")
+                    traj_dict[val] = (stop_dict[row["stop_id"]])
+                    for traj in trajectories:
+                        if traj.trip_id==row["trip_id"]:
+                            traj.trajectory.append(traj_dict)
+                            traj.stops.append(row["stop_id"])
+                            break
+            else:
+                break
+            prev_trip_id=row["trip_id"]
+            flag=1
+            counter+=1
+        shapes = parseGTFS(trip_files)
+        shapes_data = shapes.readCSV(self.trip_files[4])
+        for traj in trajectories:
+            for i in range(len(traj.stops)):
+                flag=0
+                minseq=0
+                for row in shapes_data:
+                    if row["shape_id"]==traj.shapeid:
+                        if flag==0:
+                            prev_row=row
+                            flag=1
+                            min_dist=0
+                        else:
+                            dist=abs((geopy.distance.geodesic(stop_dict[traj.stops[i]], (row["shape_pt_lat"], row["shape_pt_lon"])).km+geopy.distance.geodesic(stop_dict[traj.stops[i]], (prev_row["shape_pt_lat"], prev_row["shape_pt_lon"])).km)**2 - (geopy.distance.geodesic((row["shape_pt_lat"], row["shape_pt_lon"]), (prev_row["shape_pt_lat"], prev_row["shape_pt_lon"])).km)**2)
+                            if min_dist==0:
+                                min_dist=dist
+                            elif dist<min_dist:
+                                min_dist=dist
+                                minseq=int(row["shape_pt_sequence"])
+                    elif row["shape_id"]!=traj.shapeid and flag==1:
+                        break
+                traj.proj.append(minseq)
         return trajectories
 
 class Trajectory:
-    def __init__(self,trip_id,service_id):
+    def __init__(self,trip_id,service_id,shape_id):
         self.trip_id=trip_id
         self.service_id=service_id
+        self.shapeid=shape_id
         self.trajectory=[]
+        self.stops=[]
+        self.proj=[]
     def getPosition(time):
         return coordinate
     def isActive(time):
@@ -46,6 +107,6 @@ class Transit:
     def activeTrajectories(time):
         return allActiveTrajectories
 
-trip_files = ["RATP_GTFS_FULL/agency.txt", "RATP_GTFS_FULL/calendar_dates.txt", "RATP_GTFS_FULL/calendar.txt", "RATP_GTFS_FULL/routes.txt", "RATP_GTFS_FULL/stop_times.txt", "RATP_GTFS_FULL/stops.txt", "RATP_GTFS_FULL/transfers.txt", "RATP_GTFS_FULL/trips.txt"]
+trip_files = ["../NYC/agency.txt", "../NYC/calendar_dates.txt", "../NYC/calendar.txt", "../NYC/routes.txt", "../NYC/shapes.txt", "../NYC/stop_times.txt", "../NYC/stops.txt", "../NYC/transfers.txt", "../NYC/trips.txt"]
 inst = parseGTFS(trip_files)
 inst_data = inst.parseTrips()
