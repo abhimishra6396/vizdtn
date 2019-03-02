@@ -40,7 +40,7 @@ class parseGTFS:
         prev_trip_id=0
         counter=0
         for row in stop_times_data:
-            if counter<100:
+            if counter<5000:
                 if prev_trip_id==row["trip_id"] or flag==0:
                     traj_dict={}
                     val = self.toElapsedTime(row["arrival_time"],"08/02/2019")
@@ -64,6 +64,8 @@ class parseGTFS:
             prev_trip_id=row["trip_id"]
             flag=1
             counter+=1
+        for traj in trajectories:
+            print len(traj.trajectory)
         shapes = parseGTFS(trip_files)
         shapes_data = shapes.readCSV(self.trip_files[4])
         for traj in trajectories:
@@ -97,6 +99,8 @@ class parseGTFS:
                         np = line.interpolate(line.project(p))
                         traj.stop_proj.append(np)
                         break
+        for traj in trajectories:
+            traj.getPosition(20)
         return trajectories
 
 class Trajectory:
@@ -108,16 +112,26 @@ class Trajectory:
         self.stops=[]
         self.proj=[]
         self.stop_proj=[]
-    def getPosition(time):
-        return coordinate
-    def isActive(time):
+    def getPosition(self, time):
+        for i in range(len(self.stop_proj)):
+            print self.stop_proj[i]
+        first_stop_x = 1
+        first_stop_y = 2
+        second_stop_x = 3
+        second_stop_y = 4
+        time_first = 5
+        time_second =6
+        posx = first_stop_x + ((time-time_first)*(second_stop_x-first_stop_x))/(time_second-time_first)
+        posy = first_stop_y + ((time-time_first)*(second_stop_y-first_stop_y))/(time_second-time_first)
+        return (posx, posy)
+    def isActive(self, time):
         return isvActive
 
 class Transit:
     def __init__(self,file_name,trajectories):
         self.file_name=file_name
         self.trajectories=trajectories
-    def activeTrajectories(time):
+    def activeTrajectories(self, time):
         return allActiveTrajectories
 
 trip_files = ["../NYC/agency.txt", "../NYC/calendar_dates.txt", "../NYC/calendar.txt", "../NYC/routes.txt", "../NYC/shapes.txt", "../NYC/stop_times.txt", "../NYC/stops.txt", "../NYC/transfers.txt", "../NYC/trips.txt"]
