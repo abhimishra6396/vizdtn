@@ -125,8 +125,6 @@ class parseGTFS(Graph):
         stops_data = stops.readCSV(self.trip_files[6])
         for row in stops_data:
             stop_dict[row["stop_id"]] = [row["stop_lat"],row["stop_lon"],0,0,set()]
-            stop_index_dict[row["stop_id"]] = i
-            i+=1
         print "Number of Stops in this transport system is: %d\n" %len(stop_dict)
         stop_times = parseGTFS(trip_files)
         stop_times_data = stop_times.readCSV(self.trip_files[5])
@@ -149,14 +147,17 @@ class parseGTFS(Graph):
         route_keys=[]
         print "\n\n\n\n\n\n\n\n\n\n"
         print "Stops with multiple routes are:\n"
+        i=0
         for key in stop_dict.keys():
             if stop_dict[key][3]==1:
                 print "Stop ID: ",key,"\tRoutes: ",list(stop_dict[key][4])
                 route_keys.append(key)
+                stop_index_dict[key] = i
+                i+=1
                 count+=1
         print "There are %d Stops that have multiple routes" %count
         stop_times_data = stop_times.readCSV(self.trip_files[5])
-        adja_M = [[1 for x in range(len(route_keys))]for x in range(len(route_keys))]
+        adja_M = [[0 for x in range(len(route_keys))]for x in range(len(route_keys))]
         """for i in range(len(route_keys)):
             ind_array.append(stop_index_dict[route_keys[i]])
         for i in range(len(stop_dict)):
@@ -196,27 +197,45 @@ class parseGTFS(Graph):
         print "The list of Routes and their stops in order are:\n"
         for row in routes_data:
             print "Route: ", row["route_id"],"\tStops: ",route_ordered_dict[row["route_id"]], "\n\n\n"
-        adja_M = self.update_weights(adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time)
+        adja_M = self.update_weights(adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time, stop_dict)
         self.start_transfer(stop_freq[0][0], content_transfer_time, route_keys, adja_M)
-        self.flooding(adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, "7620", stop_dict)
+        #self.flooding(adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, "7620", stop_dict)
         return trajectories
 
-    def update_weights(self, adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time):
+    def update_weights(self, adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time, stop_dict):
         trips = parseGTFS(self.trip_files)
         stop_times = parseGTFS(trip_files)
         start_t=0
         stop_times_data = stop_times.readCSV(self.trip_files[5])
         for keys in route_ordered_dict.keys():
-            for i in range(len(route_dict[keys])):
-                ord=[]
-                for j in range(140):
-                    if len(route_ordered_dict[keys][j+1][0])>0:
-                        if list(route_ordered_dict[keys][j+1][0])[0] in route_dict[keys]:
-                            ord.append(list(route_ordered_dict[keys][j+1][0])[0])
-        """for i in range(len(adja_M)):
-            for j in range(len(adja_M)):
+            flag1=0
+            flag2=0
+            for i in range(140):
+                if len(route_ordered_dict[keys][i+1][0])>0:
+                    if flag1==0 and stop_dict[list(route_ordered_dict[keys][i+1][0])[0]][3]==1:
+                        prev_up=list(route_ordered_dict[keys][i+1][0])[0]
+                        prev_weight_up=route_ordered_dict[keys][i+1][2]
+                        flag1=1
+                    else:
+                        if stop_dict[list(route_ordered_dict[keys][i+1][0])[0]][3]==1:
+                            adja_M[stop_index_dict[prev_up]][stop_index_dict[list(route_ordered_dict[keys][i+1][0])[0]]]=route_ordered_dict[keys][i+1][2]-prev_weight_up
+                            prev_up=list(route_ordered_dict[keys][i+1][0])[0]
+                            prev_weight_up=route_ordered_dict[keys][i+1][2]
+                if len(route_ordered_dict[keys][i+1][1])>0:
+                    if flag2==0 and stop_dict[list(route_ordered_dict[keys][i+1][1])[0]][3]==1:
+                        prev_down=list(route_ordered_dict[keys][i+1][1])[0]
+                        prev_weight_down=route_ordered_dict[keys][i+1][3]
+                        flag2=1
+                    else:
+                        if stop_dict[list(route_ordered_dict[keys][i+1][1])[0]][3]==1:
+                            adja_M[stop_index_dict[prev_down]][stop_index_dict[list(route_ordered_dict[keys][i+1][1])[0]]]=route_ordered_dict[keys][i+1][3]-prev_weight_down
+                            prev_down=list(route_ordered_dict[keys][i+1][1])[0]
+                            prev_weight_down=route_ordered_dict[keys][i+1][3]
+        """for i in range(len(adja_M[0])):
+            for j in range(len(adja_M[0])):
                 if adja_M[i][j]>0:
-                    print adja_M[i][j]"""
+                    print adja_M[i][j]
+            print "\n"""
         return adja_M
 
     def start_transfer(self, stop_id, content_transfer_time, route_keys, adja_M):
@@ -229,7 +248,7 @@ class parseGTFS(Graph):
             for j in range(len(adja_M)):
                 if adja_M[i][j]!=0:
                     list_arcs.append(Arc(j, adja_M[i][j], i))
-        #print self.min_spanning_arborescence(list_arcs, 0)
+        print self.min_spanning_arborescence(list_arcs, 0)
 
     def flooding(self, adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict):
         trips = parseGTFS(self.trip_files)
@@ -246,7 +265,8 @@ class parseGTFS(Graph):
         for i in range(tot_trips):
             if trip_timed[i][1]>content_transfer_time:
                 if trip_dict[trip_timed[i][0]] in stop_dict[stop_id][4]:
-                    self.recTransfer(route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, trip_timed, i, "4381")
+                    xhas=1
+                    #self.recTransfer(route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, trip_timed, i, "4381")
                     break
 
     def recTransfer(self, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, trip_timed, i, target_stops):
