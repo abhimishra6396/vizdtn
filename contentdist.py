@@ -71,8 +71,10 @@ class parseGTFS(Graph):
         self.trip_files = trip_files
         self.start_time = 12*3600
         self.visited_count = 0
+        self.visited_stops_set=set()
         self.time_taken = 0
         self.total_time_now=0
+        self.route_check={}
     def readCSV(self, file_name):
         csv_file = open(file_name, mode='r')
         data = csv.DictReader(csv_file)
@@ -95,6 +97,9 @@ class parseGTFS(Graph):
         route_dict={} #route id to all it's contained multi route stops
         route_ordered_dict={} #route id to it's stops in order
         trip_service_dict={} #trip id to bool suggesting if that trip was present
+        stop_trip_dict={} #stop_id to list of available trips after content_transfer_time
+        trip_length_dict={} #trip_id to its length mapping
+        route_maxlen_trip={} #route_id to trip with max length
         wkd=0
         i=0
         flag=0
@@ -124,14 +129,36 @@ class parseGTFS(Graph):
         stops = parseGTFS(trip_files)
         stops_data = stops.readCSV(self.trip_files[6])
         for row in stops_data:
+            stop_trip_dict[row["stop_id"]] = []
             stop_dict[row["stop_id"]] = [row["stop_lat"],row["stop_lon"],0,0,set()]
         print "Number of Stops in this transport system is: %d\n" %len(stop_dict)
         stop_times = parseGTFS(trip_files)
         stop_times_data = stop_times.readCSV(self.trip_files[5])
         for row in stop_times_data:
             if trip_service_dict[row["trip_id"]]==1:
+                trip_length_dict[row["trip_id"]]=0
+        stop_times_data = stop_times.readCSV(self.trip_files[5])
+        flag=0
+        prev_trip=0
+        trip_length=1
+        for row in stop_times_data:
+            if trip_service_dict[row["trip_id"]]==1:
+                if flag==0:
+                    prev_trip=row["trip_id"]
+                    flag=1
+                else:
+                    if row["trip_id"]==prev_trip:
+                        trip_length+=1
+                    else:
+                        trip_length_dict[prev_trip]=trip_length
+                        trip_length=1
+                        prev_trip=row["trip_id"]
+                if (self.toElapsedTime(row["departure_time"])>self.toElapsedTime(content_transfer_time)):
+                    stop_trip_dict[row["stop_id"]].append((row["trip_id"], self.toElapsedTime(row["departure_time"])))
                 if int(row["stop_sequence"])==1:
                     stop_dict[row["stop_id"]][2]+=1
+        for key in stop_trip_dict.keys():
+            stop_trip_dict[key]=sorted(stop_trip_dict[key], key=itemgetter(1))
         stop_freq = sorted(stop_dict.items(), key=lambda x: x[1][2], reverse=True)
         print "Most Frequent stop for trip to start is: %d which is visited %d times.\n" %(int(stop_freq[0][0]), int(stop_freq[0][1][2]))
         stop_times_data = stop_times.readCSV(self.trip_files[5])
@@ -167,6 +194,8 @@ class parseGTFS(Graph):
         routes = parseGTFS(trip_files)
         routes_data = trips.readCSV(self.trip_files[3])
         for row in routes_data:
+            route_maxlen_trip[row["route_id"]+"u"]=0
+            route_maxlen_trip[row["route_id"]+"d"]=0
             path_dict={}
             for i in range(140):
                 path_dict[i+1]=[set(),set(),0,0] #direction_id 0,direction_id 1, time taken from prev. stop in direction_id 0, time taken from prev. stop in direction_id 1
@@ -185,21 +214,39 @@ class parseGTFS(Graph):
         stop_times_data = stop_times.readCSV(self.trip_files[5])
         for row in stop_times_data:
             if trip_service_dict[row["trip_id"]]==1:
-                if trip_direction[row["trip_id"]]==0:
-                    route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][0].add(row["stop_id"])
-                    if route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][2]==0:
-                        route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][2]=self.toElapsedTime(row["departure_time"])
+                if route_maxlen_trip[trip_dict[row["trip_id"]]+"u"]!=0 and trip_direction[row["trip_id"]]==0:
+                    if route_maxlen_trip[trip_dict[row["trip_id"]]+"u"][1] < trip_length_dict[row["trip_id"]]:
+                        route_maxlen_trip[trip_dict[row["trip_id"]]+"u"] = (row["trip_id"], trip_length_dict[row["trip_id"]])
+                elif route_maxlen_trip[trip_dict[row["trip_id"]]+"d"]!=0 and trip_direction[row["trip_id"]]==1:
+                    if route_maxlen_trip[trip_dict[row["trip_id"]]+"d"][1] < trip_length_dict[row["trip_id"]]:
+                        route_maxlen_trip[trip_dict[row["trip_id"]]+"d"] = (row["trip_id"], trip_length_dict[row["trip_id"]])
                 else:
-                    route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][1].add(row["stop_id"])
-                    if route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][3]==0:
-                        route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][3]=self.toElapsedTime(row["departure_time"])
+                    if trip_direction[row["trip_id"]]==0:
+                        route_maxlen_trip[trip_dict[row["trip_id"]]+"u"] = (row["trip_id"], trip_length_dict[row["trip_id"]])
+                    elif trip_direction[row["trip_id"]]==1:
+                        route_maxlen_trip[trip_dict[row["trip_id"]]+"d"] = (row["trip_id"], trip_length_dict[row["trip_id"]])
+        stop_times_data = stop_times.readCSV(self.trip_files[5])
+        for row in stop_times_data:
+            if trip_service_dict[row["trip_id"]]==1:
+                if trip_direction[row["trip_id"]]==0:
+                    if route_maxlen_trip[trip_dict[row["trip_id"]]+"u"][0]==row["trip_id"]:
+                        route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][0].add(row["stop_id"])
+                        if route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][2]==0:
+                            route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][2]=self.toElapsedTime(row["departure_time"])
+                else:
+                    if route_maxlen_trip[trip_dict[row["trip_id"]]+"d"][0]==row["trip_id"]:
+                        route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][1].add(row["stop_id"])
+                        if route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][3]==0:
+                            route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][3]=self.toElapsedTime(row["departure_time"])
         routes_data = trips.readCSV(self.trip_files[3])
         print "The list of Routes and their stops in order are:\n"
         for row in routes_data:
             print "Route: ", row["route_id"],"\tStops: ",route_ordered_dict[row["route_id"]], "\n\n\n"
         adja_M = self.update_weights(adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time, stop_dict)
-        self.start_transfer(stop_freq[0][0], content_transfer_time, route_keys, adja_M)
+        #self.start_transfer(stop_freq[0][0], content_transfer_time, route_keys, adja_M)
         #self.flooding(adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, "7620", stop_dict)
+        #print trip_length_dict["8511736"]
+        print route_maxlen_trip
         return trajectories
 
     def update_weights(self, adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time, stop_dict):
@@ -246,9 +293,9 @@ class parseGTFS(Graph):
         #print adja_M
         for i in range(len(adja_M)):
             for j in range(len(adja_M)):
-                if adja_M[i][j]!=0:
-                    list_arcs.append(Arc(j, adja_M[i][j], i))
-        print self.min_spanning_arborescence(list_arcs, 0)
+                #if adja_M[i][j]>0:
+                list_arcs.append(Arc(j, adja_M[i][j], i))
+        print self.min_spanning_arborescence(list_arcs, start)
 
     def flooding(self, adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict):
         trips = parseGTFS(self.trip_files)
@@ -262,24 +309,49 @@ class parseGTFS(Graph):
         trip_timed=sorted(trip_timed, key=itemgetter(1))
         content_transfer_time=self.toElapsedTime(content_transfer_time)
         tot_trips=len(trip_timed)
+        val=0
         for i in range(tot_trips):
             if trip_timed[i][1]>content_transfer_time:
                 if trip_dict[trip_timed[i][0]] in stop_dict[stop_id][4]:
-                    xhas=1
+                    val=i
                     #self.recTransfer(route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, trip_timed, i, "4381")
                     break
+        for keys in route_dict.keys():
+            self.route_check[keys+"u"]=0
+            self.route_check[keys+"d"]=0
+        flag=0
+        next_mult=set()
+        current_mult=set()
+        while val < tot_trips:
+            if flag==0 and len(next_mult)==0:
+                for items in stop_dict[stop_id][4]:
+                    current_mult.update(route_dict[items])
+                    self.route_check[items+"u"]=1
+                    self.route_check[items+"d"]=1
+                flag=1
+            elif flag==0 and len(next_mult)>0:
+                current_mult=next_mult
+                next_mult=set()
+            for items in current_mult:
+                    next_mult.update(self.recTransfer(route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, items, stop_dict, trip_timed, val, "4381"))
+            flag=0
+            val+=1
+            if len(self.visited_stops_set)>=len(route_keys):
+                break
+            #if sum(value == 1 for value in self.route_check.values())>=2*len(route_dict.keys()):
+            #    break
+
+        print self.visited_count, len(self.visited_stops_set), len(route_keys), self.route_check
 
     def recTransfer(self, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, trip_timed, i, target_stops):
-        trips = parseGTFS(self.trip_files)
-        stop_times = parseGTFS(trip_files)
-        start_t=0
-        stop_times_data = stop_times.readCSV(self.trip_files[5])
         self.visited_count+=1
-        if trip_dict[trip_timed[i][0]] in stop_dict[stop_id][4]:
-            if ~(target_stops in route_dict[trip_dict[trip_timed[i][0]]]):
-                self.recTransfer(route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, trip_timed, i, target_stops)
-            else:
-                return 0
+        self.visited_stops_set.add(stop_id)
+        temp=set()
+        for items in stop_dict[stop_id][4]:
+            temp.update(route_dict[items])
+            self.route_check[items+"u"]=1
+            self.route_check[items+"d"]=1
+        return temp
 
         #print trip_timed, content_transfer_time
 
