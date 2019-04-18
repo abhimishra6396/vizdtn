@@ -72,8 +72,10 @@ class parseGTFS(Graph):
         self.start_time = 12*3600
         self.visited_count = 0
         self.visited_stops_set=set()
-        self.time_taken = 0
+        self.stop_data_received_time = {}
+        self.stop_first_received_time = {}
         self.total_time_now=0
+        self.route_count=0
         self.route_check={}
     def readCSV(self, file_name):
         csv_file = open(file_name, mode='r')
@@ -202,6 +204,8 @@ class parseGTFS(Graph):
             route_dict[row["route_id"]]=[]
             route_ordered_dict[row["route_id"]]=path_dict
             for keys in route_keys:
+                self.stop_data_received_time[keys]=self.toElapsedTime(content_transfer_time)
+                self.stop_first_received_time[keys]=self.toElapsedTime(content_transfer_time)
                 if row["route_id"] in list(stop_dict[keys][4]):
                     route_dict[row["route_id"]].append(keys)
         routes_data = trips.readCSV(self.trip_files[3])
@@ -244,9 +248,10 @@ class parseGTFS(Graph):
             print "Route: ", row["route_id"],"\tStops: ",route_ordered_dict[row["route_id"]], "\n\n\n"
         adja_M = self.update_weights(adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time, stop_dict)
         #self.start_transfer(stop_freq[0][0], content_transfer_time, route_keys, adja_M)
-        #self.flooding(adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, "7620", stop_dict)
+        self.flooding(adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, "4073", stop_dict, stop_trip_dict, stop_index_dict, trip_direction)
         #print trip_length_dict["8511736"]
-        print route_maxlen_trip
+        #print route_maxlen_trip
+        #print stop_trip_dict
         return trajectories
 
     def update_weights(self, adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time, stop_dict):
@@ -297,7 +302,7 @@ class parseGTFS(Graph):
                 list_arcs.append(Arc(j, adja_M[i][j], i))
         print self.min_spanning_arborescence(list_arcs, start)
 
-    def flooding(self, adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict):
+    def flooding(self, adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, stop_trip_dict, stop_index_dict, trip_direction):
         trips = parseGTFS(self.trip_files)
         stop_times = parseGTFS(trip_files)
         start_t=0
@@ -322,7 +327,7 @@ class parseGTFS(Graph):
         flag=0
         next_mult=set()
         current_mult=set()
-        while val < tot_trips:
+        while self.route_count <= len(self.route_check.keys())-20:
             if flag==0 and len(next_mult)==0:
                 for items in stop_dict[stop_id][4]:
                     current_mult.update(route_dict[items])
@@ -333,24 +338,81 @@ class parseGTFS(Graph):
                 current_mult=next_mult
                 next_mult=set()
             for items in current_mult:
-                    next_mult.update(self.recTransfer(route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, items, stop_dict, trip_timed, val, "4381"))
+                    next_mult.update(self.recTransfer(adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, items, stop_dict, trip_timed, val, stop_trip_dict, stop_index_dict, trip_direction))
             flag=0
             val+=1
             if len(self.visited_stops_set)>=len(route_keys):
                 break
+            temp=0
+            for key in self.route_check.keys():
+                if self.route_check[key]==1:
+                    temp+=1
+            self.route_count=temp
             #if sum(value == 1 for value in self.route_check.values())>=2*len(route_dict.keys()):
             #    break
 
-        print self.visited_count, len(self.visited_stops_set), len(route_keys), self.route_check
+        print self.visited_count, len(self.visited_stops_set), len(route_keys), self.route_check, self.stop_data_received_time
 
-    def recTransfer(self, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, trip_timed, i, target_stops):
+    def recTransfer(self, adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, trip_timed, i, stop_trip_dict, stop_index_dict, trip_direction):
         self.visited_count+=1
         self.visited_stops_set.add(stop_id)
         temp=set()
+        temp_stop_route={}
         for items in stop_dict[stop_id][4]:
             temp.update(route_dict[items])
             self.route_check[items+"u"]=1
             self.route_check[items+"d"]=1
+            temp_stop_route[items+"u"]=0
+            temp_stop_route[items+"d"]=0
+        j=0
+        k=0
+        while j<len(temp_stop_route) and k<len(stop_trip_dict[stop_id]):
+            if stop_trip_dict[stop_id][k][1] > self.stop_data_received_time[stop_id]:
+                if temp_stop_route[trip_dict[stop_trip_dict[stop_id][k][0]]+"u"]==0 and trip_direction[stop_trip_dict[stop_id][k][0]]==0:
+                    temp_stop_route[trip_dict[stop_trip_dict[stop_id][k][0]]+"u"]=1
+                    source_seq=0
+                    dest_seq=0
+                    for i in range(140):
+                        if len(list(route_ordered_dict[trip_dict[stop_trip_dict[stop_id][k][0]]][i+1][0]))>0:
+                            if list(route_ordered_dict[trip_dict[stop_trip_dict[stop_id][k][0]]][i+1][0])[0]==stop_id:
+                                source_seq=i+1
+                                break
+                    for items in route_dict[trip_dict[stop_trip_dict[stop_id][k][0]]]:
+                        for i in range(140):
+                            if len(list(route_ordered_dict[trip_dict[stop_trip_dict[stop_id][k][0]]][i+1][0]))>0:
+                                if list(route_ordered_dict[trip_dict[stop_trip_dict[stop_id][k][0]]][i+1][0])[0]==items:
+                                    dest_seq=i+1
+                                    break
+                        if dest_seq > source_seq:
+                            if self.stop_data_received_time[items]!=content_transfer_time:
+                                self.stop_data_received_time[items]=self.stop_data_received_time[stop_id]+adja_M[stop_index_dict[stop_id]][stop_index_dict[items]]
+                            else:
+                                self.stop_data_received_time[items]=self.stop_data_received_time[stop_id]+adja_M[stop_index_dict[stop_id]][stop_index_dict[items]]
+                                self.stop_first_received_time[items]=self.stop_data_received_time[stop_id]+adja_M[stop_index_dict[stop_id]][stop_index_dict[items]]
+                    j+=1
+                elif temp_stop_route[trip_dict[stop_trip_dict[stop_id][k][0]]+"d"]==0 and trip_direction[stop_trip_dict[stop_id][k][0]]==1:
+                    temp_stop_route[trip_dict[stop_trip_dict[stop_id][k][0]]+"d"]=1
+                    source_seq=0
+                    dest_seq=0
+                    for i in range(140):
+                        if len(list(route_ordered_dict[trip_dict[stop_trip_dict[stop_id][k][0]]][i+1][1]))>0:
+                            if list(route_ordered_dict[trip_dict[stop_trip_dict[stop_id][k][0]]][i+1][1])[0]==stop_id:
+                                source_seq=i+1
+                                break
+                    for items in route_dict[trip_dict[stop_trip_dict[stop_id][k][0]]]:
+                        for i in range(140):
+                            if len(list(route_ordered_dict[trip_dict[stop_trip_dict[stop_id][k][0]]][i+1][1]))>0:
+                                if list(route_ordered_dict[trip_dict[stop_trip_dict[stop_id][k][0]]][i+1][1])[0]==items:
+                                    dest_seq=i+1
+                                    break
+                        if dest_seq > source_seq:
+                            if self.stop_data_received_time[items]!=content_transfer_time:
+                                self.stop_data_received_time[items]=self.stop_data_received_time[stop_id]+adja_M[stop_index_dict[stop_id]][stop_index_dict[items]]
+                            else:
+                                self.stop_data_received_time[items]=self.stop_data_received_time[stop_id]+adja_M[stop_index_dict[stop_id]][stop_index_dict[items]]
+                                self.stop_first_received_time[items]=self.stop_data_received_time[stop_id]+adja_M[stop_index_dict[stop_id]][stop_index_dict[items]]
+                    j+=1
+            k+=1
         return temp
 
         #print trip_timed, content_transfer_time
