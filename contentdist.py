@@ -7,8 +7,70 @@ from collections import defaultdict, namedtuple
 from operator import itemgetter
 import matplotlib.pyplot as plt
 import numpy as np
+from collections import defaultdict
+from graph_tool.all import *
 
-class Graph:
+class GraphMST:
+    def __init__(self,vertices):
+        self.V= vertices #No. of vertices
+        self.graph = [] #default dictionary
+
+    def addEdge(self,u,v,w):
+        self.graph.append([u,v,w])
+
+    def find(self, parent, i):
+        if parent[i] == i:
+            return i
+        return self.find(parent, parent[i])
+
+    def union(self, parent, rank, x, y):
+        xroot = self.find(parent, x)
+        yroot = self.find(parent, y)
+
+        if rank[xroot] < rank[yroot]:
+            parent[xroot] = yroot
+        elif rank[xroot] > rank[yroot]:
+            parent[yroot] = xroot
+
+        else :
+            parent[yroot] = xroot
+            rank[xroot] += 1
+
+    def KruskalMST(self):
+
+        result =[] #This will store the resultant MST
+
+        i = 0 # An index variable, used for sorted edges
+        e = 0 # An index variable, used for result[]
+
+        self.graph =  sorted(self.graph,key=lambda item: item[2])
+
+        parent = [] ; rank = []
+
+        # Create V subsets with single elements
+        for node in range(self.V):
+            parent.append(node)
+            rank.append(0)
+
+        # Number of edges to be taken is equal to V-1
+        while e < self.V -1 :
+
+            u,v,w =  self.graph[i]
+            i = i + 1
+            x = self.find(parent, u)
+            y = self.find(parent ,v)
+
+            if x != y:
+                e = e + 1
+                result.append([u,v,w])
+                self.union(parent, rank, x, y)
+
+        print ("Following are the edges in the constructed MST")
+        for u,v,weight  in result:
+            #print str(u) + " -- " + str(v) + " == " + str(weight)
+            print ("%d -- %d == %d" % (u,v,weight))
+
+class GraphDirected:
     def __init__(self, list_tuple):
         self.list_tuple=list_tuple
 
@@ -66,15 +128,14 @@ class Graph:
             stack.extend(arcs_by_head[arc.tail])
         return solution_arc_by_tail
 
-class parseGTFS(Graph):
+class parseGTFS(GraphDirected, GraphMST):
     def __init__(self,trip_files):
         self.trip_files = trip_files
-        self.start_time = 12*3600
         self.visited_count = 0
         self.visited_stops_set=set()
         self.stop_data_received_time = {}
         self.stop_first_received_time = {}
-        self.total_time_now=0
+        self.flooding_progress=[]
         self.route_count=0
         self.route_check={}
     def readCSV(self, file_name):
@@ -127,13 +188,13 @@ class parseGTFS(Graph):
                         trip_set.add(row["trip_id"])
                         trip_service_dict[row["trip_id"]]=1
                         trajectories.append(Trajectory(row["trip_id"], row["service_id"], row["shape_id"]))
-        print "Number of Trips this day is: %d\n" %len(trip_set)
+        print ("Number of Trips this day is: %d\n" %len(trip_set))
         stops = parseGTFS(trip_files)
         stops_data = stops.readCSV(self.trip_files[6])
         for row in stops_data:
             stop_trip_dict[row["stop_id"]] = []
             stop_dict[row["stop_id"]] = [row["stop_lat"],row["stop_lon"],0,0,set()]
-        print "Number of Stops in this transport system is: %d\n" %len(stop_dict)
+        print ("Number of Stops in this transport system is: %d\n" %len(stop_dict))
         stop_times = parseGTFS(trip_files)
         stop_times_data = stop_times.readCSV(self.trip_files[5])
         for row in stop_times_data:
@@ -162,7 +223,7 @@ class parseGTFS(Graph):
         for key in stop_trip_dict.keys():
             stop_trip_dict[key]=sorted(stop_trip_dict[key], key=itemgetter(1))
         stop_freq = sorted(stop_dict.items(), key=lambda x: x[1][2], reverse=True)
-        print "Most Frequent stop for trip to start is: %d which is visited %d times.\n" %(int(stop_freq[0][0]), int(stop_freq[0][1][2]))
+        print ("Most Frequent stop for trip to start is: %d which is visited %d times.\n" %(int(stop_freq[0][0]), int(stop_freq[0][1][2])))
         stop_times_data = stop_times.readCSV(self.trip_files[5])
         count=0
         for row in stop_times_data:
@@ -174,19 +235,19 @@ class parseGTFS(Graph):
                 if len(stop_dict[row["stop_id"]][4])>1:
                     stop_dict[row["stop_id"]][3]=1
         route_keys=[]
-        print "\n\n\n\n\n\n\n\n\n\n"
-        print "Stops with multiple routes are:\n"
+        print ("\n\n\n\n\n\n\n\n\n\n")
+        print ("Stops with multiple routes are:\n")
         i=0
         for key in stop_dict.keys():
             if stop_dict[key][3]==1:
-                print "Stop ID: ",key,"\tRoutes: ",list(stop_dict[key][4])
+                print ("Stop ID: ",key,"\tRoutes: ", list(stop_dict[key][4]))
                 route_keys.append(key)
                 stop_index_dict[key] = i
                 i+=1
                 count+=1
-        print "There are %d Stops that have multiple routes" %count
+        print ("There are %d Stops that have multiple routes" %count)
         stop_times_data = stop_times.readCSV(self.trip_files[5])
-        adja_M = [[0 for x in range(len(route_keys))]for x in range(len(route_keys))]
+        adja_M = [[100000 for x in range(len(route_keys))]for x in range(len(route_keys))]
         """for i in range(len(route_keys)):
             ind_array.append(stop_index_dict[route_keys[i]])
         for i in range(len(stop_dict)):
@@ -209,12 +270,12 @@ class parseGTFS(Graph):
                 if row["route_id"] in list(stop_dict[keys][4]):
                     route_dict[row["route_id"]].append(keys)
         routes_data = trips.readCSV(self.trip_files[3])
-        print "\n\n\n\n\n\n\n\n\n\n"
-        print "The list of Routes and their multi-route stops are:\n"
+        print ("\n\n\n\n\n\n\n\n\n\n")
+        print ("The list of Routes and their multi-route stops are:\n")
         for row in routes_data:
-            print "Route: ", row["route_id"],"\tStops: ",route_dict[row["route_id"]]
+            print (("Route: "), row["route_id"], ("\tStops: "), route_dict[row["route_id"]])
         flag=0
-        print "\n\n\n\n\n\n\n\n\n\n"
+        print ("\n\n\n\n\n\n\n\n\n\n")
         stop_times_data = stop_times.readCSV(self.trip_files[5])
         for row in stop_times_data:
             if trip_service_dict[row["trip_id"]]==1:
@@ -243,12 +304,15 @@ class parseGTFS(Graph):
                         if route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][3]==0:
                             route_ordered_dict[trip_dict[row["trip_id"]]][int(row["stop_sequence"])][3]=self.toElapsedTime(row["departure_time"])
         routes_data = trips.readCSV(self.trip_files[3])
-        print "The list of Routes and their stops in order are:\n"
+        print ("The list of Routes and their stops in order are:\n")
         for row in routes_data:
-            print "Route: ", row["route_id"],"\tStops: ",route_ordered_dict[row["route_id"]], "\n\n\n"
+            print (("Route: "), row["route_id"], ("\tStops: "), route_ordered_dict[row["route_id"]], ("\n\n\n"))
         adja_M = self.update_weights(adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time, stop_dict)
-        #self.start_transfer(stop_freq[0][0], content_transfer_time, route_keys, adja_M)
-        self.flooding(adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, "4073", stop_dict, stop_trip_dict, stop_index_dict, trip_direction)
+        #self.start_transfer_dijkstra(stop_freq[0][0], content_transfer_time, route_keys, adja_M)
+        source_stop="4073"
+        #self.drawGraphs(source_stop, content_transfer_time, route_keys, adja_M)
+        #self.flooding(adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, source_stop, stop_dict, stop_trip_dict, stop_index_dict, trip_direction)
+        #self.plot_flooding(source_stop, stop_dict, route_keys, content_transfer_time)
         #print trip_length_dict["8511736"]
         #print route_maxlen_trip
         #print stop_trip_dict
@@ -290,7 +354,7 @@ class parseGTFS(Graph):
             print "\n"""
         return adja_M
 
-    def start_transfer(self, stop_id, content_transfer_time, route_keys, adja_M):
+    def start_transfer_edmond(self, stop_id, content_transfer_time, route_keys, adja_M):
         #adjmatrix= [[0 for x in range(len(route_keys))]for x in range(len(route_keys))]
         Arc = namedtuple('Arc', ('tail', 'weight', 'head'))
         start=route_keys.index(stop_id)
@@ -300,7 +364,15 @@ class parseGTFS(Graph):
             for j in range(len(adja_M)):
                 #if adja_M[i][j]>0:
                 list_arcs.append(Arc(j, adja_M[i][j], i))
-        print self.min_spanning_arborescence(list_arcs, start)
+        print (self.min_spanning_arborescence(list_arcs, start))
+
+    def start_transfer_dijkstra(self, stop_id, content_transfer_time, route_keys, adja_M):
+        start=route_keys.index(stop_id)
+        g=GraphMST(len(route_keys))
+        for i in range(len(adja_M)):
+            for j in range(i, len(adja_M)):
+                    g.addEdge(i, j, adja_M[i][j])
+        g.KruskalMST()
 
     def flooding(self, adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, stop_trip_dict, stop_index_dict, trip_direction):
         trips = parseGTFS(self.trip_files)
@@ -327,7 +399,9 @@ class parseGTFS(Graph):
         flag=0
         next_mult=set()
         current_mult=set()
-        while self.route_count <= len(self.route_check.keys())-20:
+        #while self.route_count <= len(self.route_check.keys())-20:
+        self.flooding_progress.append((0, 0))
+        while self.visited_count < 10000:
             if flag==0 and len(next_mult)==0:
                 for items in stop_dict[stop_id][4]:
                     current_mult.update(route_dict[items])
@@ -350,8 +424,10 @@ class parseGTFS(Graph):
             self.route_count=temp
             #if sum(value == 1 for value in self.route_check.values())>=2*len(route_dict.keys()):
             #    break
+            #print len(current_mult)
+            self.flooding_progress.append((len(current_mult), max(self.stop_data_received_time.values())-content_transfer_time))
 
-        print self.visited_count, len(self.visited_stops_set), len(route_keys), self.route_check, self.stop_data_received_time
+        print (self.visited_count, len(self.visited_stops_set), len(route_keys))
 
     def recTransfer(self, adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, trip_timed, i, stop_trip_dict, stop_index_dict, trip_direction):
         self.visited_count+=1
@@ -417,6 +493,44 @@ class parseGTFS(Graph):
 
         #print trip_timed, content_transfer_time
 
+    def plot_flooding(self, source_stop, stop_dict, route_keys, content_transfer_time):
+        dist_source=[]
+        for keys in route_keys:
+            dist_source.append((keys, abs(geopy.distance.geodesic((stop_dict[source_stop][0], stop_dict[source_stop][1]), (stop_dict[keys][0], stop_dict[keys][1])).km), self.stop_first_received_time[keys]-self.toElapsedTime(content_transfer_time)))
+        dist_source=sorted(dist_source, key=itemgetter(1))
+        plt.figure(1)
+        plt.plot([item[2] for item in dist_source])
+        plt.title("time_taken_flooding_distance_from_source")
+        plt.xlabel('stops sorted on distance')
+        plt.ylabel('time taken in seconds')
+        plt.savefig('time_taken_flooding_distance_from_source.png')
+        plt.figure(2)
+        plt.plot([item[0] for item in self.flooding_progress], [item[1] for item in self.flooding_progress])
+        plt.title("flooding_progress_with_time")
+        plt.xlabel('number of stops')
+        plt.ylabel('time in seconds')
+        plt.savefig('flooding_progress_with_time.png')
+        #print dist_source
+        print (self.flooding_progress)
+
+    def drawGraphs(self, stop_id, content_transfer_time, route_keys, adja_M):
+        g=Graph()
+        v=[]
+        e=[]
+        v_prop = g.new_vertex_property("string")
+        #e_prop = g.new_edge_property("string")
+        e_len = g.new_edge_property("int")
+        for i in range(len(route_keys)):
+            v.append(g.add_vertex())
+            v_prop[v[i]] = route_keys[i]
+        for i in range(len(adja_M)):
+            for j in range(len(adja_M)):
+                if adja_M[i][j]<100000:
+                    e.append(g.add_edge(v[i], v[j]))
+                    e_len[e[len(e)-1]] = adja_M[i][j]
+
+        graph_draw(g, vertex_text=v_prop, edge_text = e_len, edge_pen_width = 1, vertex_size=10, vertex_font_size=8, output_size=(6000, 6000), output="MUNI.png")
+
 class Trajectory:
     def __init__(self,trip_id,service_id,shape_id):
         self.trip_id=trip_id
@@ -447,5 +561,11 @@ class Transit:
         return allActiveTrajectories
 
 trip_files = ["../MUNI/agency.txt", "../MUNI/calendar_dates.txt", "../MUNI/calendar.txt", "../MUNI/routes.txt", "../MUNI/shapes.txt", "../MUNI/stop_times.txt", "../MUNI/stops.txt", "../MUNI/transfers.txt", "../MUNI/trips_1.txt"]
+source_stops = ["7620", "4073", "5462", "6835", "6050", "7329", "5836", "6415", "4110", "5427"]
 inst = parseGTFS(trip_files)
 inst_data = inst.parseTrips("monday", "08:00:00")
+#plt.plot(source_stops, [1325,1990,2104,1297,1529,1825,1492,2332,1852,2004])
+#plt.title("Flooding")
+#plt.xlabel('Source Stop')
+#plt.ylabel('Number of Copies')
+#plt.show()
