@@ -66,9 +66,10 @@ class GraphMST:
                 self.union(parent, rank, x, y)
 
         print ("Following are the edges in the constructed MST")
-        for u,v,weight  in result:
+        """for u,v,weight  in result:
             #print str(u) + " -- " + str(v) + " == " + str(weight)
-            print ("%d -- %d == %d" % (u,v,weight))
+            print ("%d -- %d == %d" % (u,v,weight))"""
+        return result
 
 class GraphDirected:
     def __init__(self, list_tuple):
@@ -308,7 +309,7 @@ class parseGTFS(GraphDirected, GraphMST):
         for row in routes_data:
             print (("Route: "), row["route_id"], ("\tStops: "), route_ordered_dict[row["route_id"]], ("\n\n\n"))
         adja_M = self.update_weights(adja_M, route_dict, route_keys, trip_dict, stop_index_dict, route_ordered_dict, content_transfer_time, stop_dict)
-        #self.start_transfer_dijkstra(stop_freq[0][0], content_transfer_time, route_keys, adja_M)
+        self.start_transfer_dijkstra(stop_freq[0][0], content_transfer_time, route_keys, adja_M)
         source_stop="4073"
         #self.drawGraphs(source_stop, content_transfer_time, route_keys, adja_M)
         #self.flooding(adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, source_stop, stop_dict, stop_trip_dict, stop_index_dict, trip_direction)
@@ -370,9 +371,14 @@ class parseGTFS(GraphDirected, GraphMST):
         start=route_keys.index(stop_id)
         g=GraphMST(len(route_keys))
         for i in range(len(adja_M)):
-            for j in range(i, len(adja_M)):
+            for j in range(len(adja_M)):
                     g.addEdge(i, j, adja_M[i][j])
-        g.KruskalMST()
+        val=g.KruskalMST()
+        print (val)
+        adja_spanning=[[100000 for x in range(len(route_keys))]for x in range(len(route_keys))]
+        for i in range(len(val)):
+            adja_spanning[val[i][0]][val[i][1]]=val[i][2]
+        self.drawGraphs(stop_id, content_transfer_time, route_keys, adja_spanning)
 
     def flooding(self, adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, stop_trip_dict, stop_index_dict, trip_direction):
         trips = parseGTFS(self.trip_files)
@@ -529,7 +535,7 @@ class parseGTFS(GraphDirected, GraphMST):
                     e.append(g.add_edge(v[i], v[j]))
                     e_len[e[len(e)-1]] = adja_M[i][j]
 
-        graph_draw(g, vertex_text=v_prop, edge_text = e_len, edge_pen_width = 1, vertex_size=10, vertex_font_size=8, output_size=(6000, 6000), output="MUNI.png")
+        graph_draw(g, vertex_text=v_prop, edge_text = e_len, edge_pen_width = 1, vertex_size=10, vertex_font_size=8, output_size=(6000, 6000), output="Spanning_Tree.png")
 
 class Trajectory:
     def __init__(self,trip_id,service_id,shape_id):
