@@ -65,8 +65,8 @@ class GraphMST:
                 result.append([u,v,w])
                 self.union(parent, rank, x, y)
 
-        print ("Following are the edges in the constructed MST")
-        """for u,v,weight  in result:
+        """print ("Following are the edges in the constructed MST")
+        for u,v,weight  in result:
             #print str(u) + " -- " + str(v) + " == " + str(weight)
             print ("%d -- %d == %d" % (u,v,weight))"""
         return result
@@ -374,11 +374,41 @@ class parseGTFS(GraphDirected, GraphMST):
             for j in range(len(adja_M)):
                     g.addEdge(i, j, adja_M[i][j])
         val=g.KruskalMST()
-        print (val)
+        #print (val)
         adja_spanning=[[100000 for x in range(len(route_keys))]for x in range(len(route_keys))]
         for i in range(len(val)):
             adja_spanning[val[i][0]][val[i][1]]=val[i][2]
-        self.drawGraphs(stop_id, content_transfer_time, route_keys, adja_spanning)
+        #self.drawGraphs(stop_id, content_transfer_time, route_keys, adja_spanning)
+        spanGraph={}
+        for i in range(len(route_keys)):
+            spanGraph[i]=[]
+        for i in range(len(val)):
+            spanGraph[val[i][0]].append(val[i][1])
+            spanGraph[val[i][1]].append(val[i][0])
+        self.get_Costs_dijkstra(spanGraph, [630], content_transfer_time, route_keys, adja_M, adja_spanning)
+
+    def get_Costs_dijkstra(self, spanGraph, root, content_transfer_time, route_keys, adja_M, adja_spanning):
+        visited=set()
+        cost_dijkstra={}
+        print (spanGraph)
+        for i in range(len(route_keys)):
+            cost_dijkstra[i]=[100000, 0]
+        cost_dijkstra[root[0]][0]=0
+        while len(visited)<len(route_keys):
+            next_root=[]
+            for j in range(len(root)):
+                visited.add(root[j])
+                if cost_dijkstra[root[j]][1]==0:
+                    for i in range(len(spanGraph[root[j]])):
+                        if cost_dijkstra[spanGraph[root[j]][i]][1]==0:
+                            cost_dijkstra[spanGraph[root[j]][i]][0]=min(cost_dijkstra[root[j]][0] + adja_M[spanGraph[root[j]][i]][root[j]] , cost_dijkstra[root[j]][0] + adja_M[root[j]][spanGraph[root[j]][i]])
+                            next_root.append(spanGraph[root[j]][i])
+                cost_dijkstra[root[j]][1]=1
+            #print (len(visited))
+            #print (root)
+            root=next_root
+        self.drawGraphs("4073", content_transfer_time, route_keys, adja_spanning, cost_dijkstra)
+        #print (sorted(cost_dijkstra.items(), key=itemgetter([1][0])))
 
     def flooding(self, adja_M, route_dict, route_keys, trip_dict, route_ordered_dict, content_transfer_time, trip_service_dict, stop_id, stop_dict, stop_trip_dict, stop_index_dict, trip_direction):
         trips = parseGTFS(self.trip_files)
@@ -519,7 +549,7 @@ class parseGTFS(GraphDirected, GraphMST):
         #print dist_source
         print (self.flooding_progress)
 
-    def drawGraphs(self, stop_id, content_transfer_time, route_keys, adja_M):
+    def drawGraphs(self, stop_id, content_transfer_time, route_keys, adja_M, cost_dijkstra):
         g=Graph()
         v=[]
         e=[]
@@ -528,14 +558,15 @@ class parseGTFS(GraphDirected, GraphMST):
         e_len = g.new_edge_property("int")
         for i in range(len(route_keys)):
             v.append(g.add_vertex())
-            v_prop[v[i]] = route_keys[i]
+            #v_prop[v[i]] = [route_keys[i], cost_dijkstra[i][0]]
+            v_prop[v[i]] = cost_dijkstra[i][0]
         for i in range(len(adja_M)):
             for j in range(len(adja_M)):
                 if adja_M[i][j]<100000:
                     e.append(g.add_edge(v[i], v[j]))
                     e_len[e[len(e)-1]] = adja_M[i][j]
 
-        graph_draw(g, vertex_text=v_prop, edge_text = e_len, edge_pen_width = 1, vertex_size=10, vertex_font_size=8, output_size=(6000, 6000), output="Spanning_Tree.png")
+        graph_draw(g, vertex_text=v_prop, edge_text = e_len, edge_pen_width = 1, vertex_size=10, vertex_font_size=8, output_size=(6000, 6000), output="dijkstra.png")
 
 class Trajectory:
     def __init__(self,trip_id,service_id,shape_id):
